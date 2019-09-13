@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -12,12 +14,22 @@ import (
 	"github.com/bwmarrin/discordgo"
 )
 
+type bet struct {
+	Description string  `firestore:"description"`
+	Unit        string  `firestore:"unit"`
+	Amount      float64 `firestore:"amount"`
+	Odds        float64 `firestore:"odds"`
+	Won         bool    `firestore:"won"`
+	Resolved    bool    `firestore:"resolved"`
+	User        string  `firestore:"user"`
+}
+
 func messageListener(session *discordgo.Session, message *discordgo.MessageCreate) {
 	if message.Author.ID == session.State.User.ID {
 		return
 	}
 
-	response, err := understandMessage(message.Content)
+	response, err := understandMessage(message.Content, message.Author.Username)
 
 	if err != nil {
 		session.ChannelMessageSend(message.ChannelID, err.Error())
@@ -28,7 +40,7 @@ func messageListener(session *discordgo.Session, message *discordgo.MessageCreat
 	}
 }
 
-func understandMessage(content string) (string, error) {
+func understandMessage(content, user string) (string, error) {
 	if content == "" || !strings.HasPrefix(content, "!") {
 		return "", nil
 	}
@@ -48,7 +60,7 @@ func understandMessage(content string) (string, error) {
 	case "ding":
 		return "8=====D", nil
 	case "bet":
-		return parseBet(data)
+		return parseBet(data, user)
 	default:
 		return "", errors.New("Command " + command + " not found")
 	}
@@ -70,7 +82,7 @@ func help(data string) string {
 	return retStr.String()
 }
 
-func parseBet(data string) (string, error) {
+func parseBet(data, user string) (string, error) {
 	// Expecting 3 data components: bet size, decimal odds and description
 	dataParts := strings.SplitN(data, " ", 3)
 	if (len(dataParts)) != 3 {
@@ -111,20 +123,38 @@ func parseBet(data string) (string, error) {
 		return "", errors.New("Odds too low (<1.01)")
 	}
 
+	err = placeBet(math.Floor(betAmount*100)/100, math.Floor(odds*100)/100, dataParts[2], string(currencySymbol), user)
+
+	if err != nil {
+		return "", errors.New("Couldn't store bet: " + err.Error())
+	}
+
 	if inUnits {
-		return "I would place a bet of " + fmt.Sprintf("%.2f", betAmount) +
+		return "Placed a bet of " + fmt.Sprintf("%.2f", betAmount) +
 			" units @" + fmt.Sprintf("%.2f", odds) +
-			" on " + dataParts[2] +
-			", but this is too early in development", nil
+			" on " + dataParts[2], nil
 	}
 	ac := accounting.Accounting{Symbol: string(currencySymbol), Precision: 2}
-	return "I would place a bet of " + ac.FormatMoney(betAmount) +
+	return "Placed a bet of " + ac.FormatMoney(betAmount) +
 		" @" + fmt.Sprintf("%.2f", odds) +
-		" on " + dataParts[2] +
-		", but this is too early in development", nil
+		" on " + dataParts[2], nil
 }
 
 func isDigit(character rune) bool {
 	value := character - '0'
 	return value >= 0 && value <= 9
+}
+
+func placeBet(betAmount, odds float64, description, currencySymbol, user string) error {
+	bets := client.Collection("Bets")
+	_, _, err := bets.Add(context.Background(), bet{
+		Description: description,
+		Unit:        currencySymbol,
+		Amount:      betAmount,
+		Odds:        odds,
+		User:        user,
+		Won:         false,
+		Resolved:    false,
+	})
+	return err
 }
