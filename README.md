@@ -15,4 +15,5 @@ A discord bot for tracking bets!
 ## Commands
 * `!help <command>`: Shows help for a particular command (or a list of commands if no command provided)
 * `!bet <amount> <odds> <description of bet>`: Bets an amount in units (3.50u) or money ($3.50) at the specified odds on the specified bet, then stores that in the Firestore
+* `!open`: Gets a list of bets you have open
 * `!ping`: Pong!

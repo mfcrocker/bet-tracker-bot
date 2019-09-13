@@ -7,22 +7,29 @@ import (
 	"math"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
+	"google.golang.org/api/iterator"
+
+	"cloud.google.com/go/firestore"
 	"github.com/leekchan/accounting"
 
 	"github.com/bwmarrin/discordgo"
 )
 
 type bet struct {
-	Description string  `firestore:"description"`
-	Unit        string  `firestore:"unit"`
-	Amount      float64 `firestore:"amount"`
-	Odds        float64 `firestore:"odds"`
-	Won         bool    `firestore:"won"`
-	Resolved    bool    `firestore:"resolved"`
-	User        string  `firestore:"user"`
+	Description string    `firestore:"description"`
+	Unit        string    `firestore:"unit"`
+	Amount      float64   `firestore:"amount"`
+	Odds        float64   `firestore:"odds"`
+	Won         bool      `firestore:"won"`
+	Resolved    bool      `firestore:"resolved"`
+	User        string    `firestore:"user"`
+	Timestamp   time.Time `firestore:"timestamp"`
 }
+
+var betMap map[int]*firestore.DocumentSnapshot
 
 func messageListener(session *discordgo.Session, message *discordgo.MessageCreate) {
 	if message.Author.ID == session.State.User.ID {
@@ -61,6 +68,8 @@ func understandMessage(content, user string) (string, error) {
 		return "8=====D", nil
 	case "bet":
 		return parseBet(data, user)
+	case "open":
+		return openBets(user), nil
 	default:
 		return "", errors.New("Command " + command + " not found")
 	}
@@ -77,6 +86,7 @@ func help(data string) string {
 		retStr.WriteString("BetTrackerBot general help:\n")
 		retStr.WriteString("`!help`: Shows this message! Use !help <command\\> to get more specific help for anything below\n")
 		retStr.WriteString("`!bet`: Commits a bet to the database\n")
+		retStr.WriteString("`!open`: Gets a list of bets you have open\n")
 		retStr.WriteString("`!ping`: Pong!")
 	}
 	return retStr.String()
@@ -104,6 +114,7 @@ func parseBet(data, user string) (string, error) {
 	var betAmountString string
 	if inUnits {
 		betAmountString = strings.TrimRight(dataParts[0], "u")
+		currencySymbol = 'u'
 	} else {
 		_, i := utf8.DecodeRuneInString(dataParts[0])
 		betAmountString = dataParts[0][i:]
@@ -155,6 +166,47 @@ func placeBet(betAmount, odds float64, description, currencySymbol, user string)
 		User:        user,
 		Won:         false,
 		Resolved:    false,
+		Timestamp:   time.Now(),
 	})
 	return err
+}
+
+func openBets(user string) string {
+	bets := client.Collection("Bets")
+	openBets := bets.Where("user", "==", user).Where("resolved", "==", false).OrderBy("timestamp", firestore.Asc).Documents(context.Background())
+
+	i := 1
+	betMap = make(map[int]*firestore.DocumentSnapshot)
+	var retStr strings.Builder
+
+	for {
+		betDoc, err := openBets.Next()
+		if err == iterator.Done {
+			if i == 1 {
+				return "No open bets found for " + user
+			}
+			break
+		}
+		if err != nil {
+			fmt.Println(err.Error())
+			return "Error retrieving bets for " + user
+		}
+
+		var betData bet
+		if err = betDoc.DataTo(&betData); err != nil {
+			return "Couldn't parse a bet from the database"
+		}
+
+		var amount string
+		if betData.Unit == "u" {
+			amount = fmt.Sprintf("%.2f", betData.Amount) + betData.Unit
+		} else {
+			amount = betData.Unit + fmt.Sprintf("%.2f", betData.Amount)
+		}
+		retStr.WriteString(strconv.Itoa(i) + ": " + amount + " @" + fmt.Sprintf("%.2f", betData.Odds) + " on " + betData.Description + "\n")
+		betMap[i] = betDoc
+		i++
+	}
+
+	return retStr.String()
 }
