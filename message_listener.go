@@ -73,7 +73,11 @@ func understandMessage(content, user string) (string, error) {
 	case "open":
 		return openBets(user), nil
 	case "delete":
-		return deleteBets(data, user), nil
+		return deleteBet(data, user), nil
+	case "won":
+		return resolveBet(data, user, true), nil
+	case "lost":
+		return resolveBet(data, user, false), nil
 	default:
 		return "", errors.New("Command " + command + " not found")
 	}
@@ -88,12 +92,18 @@ func help(data string) string {
 		retStr.WriteString("Placing a bet will prompt the bot to check in with you 24h later to see if you won")
 	case "delete":
 		retStr.WriteString("Usage: !delete <ID as provided by !open>")
+	case "won":
+		retStr.WriteString("Usage: !won <ID as provided by !open>")
+	case "lost":
+		retStr.WriteString("Usage: !lost <ID as provided by !open>")
 	default:
 		retStr.WriteString("BetTrackerBot general help:\n")
 		retStr.WriteString("`!help`: Shows this message! Use !help <command\\> to get more specific help for anything below\n")
 		retStr.WriteString("`!bet`: Commits a bet to the database\n")
 		retStr.WriteString("`!open`: Gets a list of bets you have open\n")
 		retStr.WriteString("`!delete`: Deletes open bets\n")
+		retStr.WriteString("`!won`: Marks an open bet as won\n")
+		retStr.WriteString("`!lost`: Marks an open bet as lost\n")
 		retStr.WriteString("`!ping`: Pong!")
 	}
 	return retStr.String()
@@ -219,7 +229,7 @@ func openBets(user string) string {
 	return retStr.String()
 }
 
-func deleteBets(data, user string) string {
+func deleteBet(data, user string) string {
 	if len(betMap) == 0 {
 		return "No open bets found to delete (you may need to !open first)"
 	}
@@ -252,4 +262,32 @@ func deleteBets(data, user string) string {
 
 	deleted = append(deleted, betID)
 	return "Bet successfully deleted"
+}
+
+func resolveBet(data, user string, won bool) string {
+	if len(betMap) == 0 {
+		return "No open bets found to resolve (you may need to !open first)"
+	}
+
+	betID, err := strconv.Atoi(data)
+	if err != nil {
+		return "Usage: !won/!lost <ID as provided by !open>"
+	}
+
+	var betData bet
+	if err = betMap[betID].DataTo(&betData); err != nil {
+		return "Couldn't parse a bet from the database"
+	}
+
+	if user != betData.User {
+		return "This isn't your bet to resolve!"
+	}
+
+	_, err = betMap[betID].Ref.Update(context.Background(), []firestore.Update{{Path: "won", Value: won}, {Path: "resolved", Value: true}})
+	if err != nil {
+		log.Printf(err.Error())
+		return "Couldn't resolve that bet in the database"
+	}
+
+	return "Bet successfully resolved"
 }

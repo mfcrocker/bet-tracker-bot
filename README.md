@@ -17,4 +17,6 @@ A discord bot for tracking bets!
 * `!bet <amount> <odds> <description of bet>`: Bets an amount in units (3.50u) or money ($3.50) at the specified odds on the specified bet, then stores that in the Firestore
 * `!open`: Gets a list of bets you have open
 * `!delete <bet ID>`: Deletes a bet based on the ID provided by `!open`
+* `!won <bet ID>`: Marks a bet as won based on the ID provided by `!open`
+* `!lost <bet ID>`: Marks a bet as lost based on the ID provided by `!open`
 * `!ping`: Pong!
