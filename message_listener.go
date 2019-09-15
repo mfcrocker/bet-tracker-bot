@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"math"
 	"strconv"
 	"strings"
@@ -30,6 +31,7 @@ type bet struct {
 }
 
 var betMap map[int]*firestore.DocumentSnapshot
+var deleted []int
 
 func messageListener(session *discordgo.Session, message *discordgo.MessageCreate) {
 	if message.Author.ID == session.State.User.ID {
@@ -70,6 +72,8 @@ func understandMessage(content, user string) (string, error) {
 		return parseBet(data, user)
 	case "open":
 		return openBets(user), nil
+	case "delete":
+		return deleteBets(data, user), nil
 	default:
 		return "", errors.New("Command " + command + " not found")
 	}
@@ -82,11 +86,14 @@ func help(data string) string {
 		retStr.WriteString("Usage: !bet <amount> <decimal odds> <description of bet>\n")
 		retStr.WriteString("Amount can either be in units (eg 3.5u) or $/£/€ (eg $3.50)\n")
 		retStr.WriteString("Placing a bet will prompt the bot to check in with you 24h later to see if you won")
+	case "delete":
+		retStr.WriteString("Usage: !delete <ID as provided by !open>")
 	default:
 		retStr.WriteString("BetTrackerBot general help:\n")
 		retStr.WriteString("`!help`: Shows this message! Use !help <command\\> to get more specific help for anything below\n")
 		retStr.WriteString("`!bet`: Commits a bet to the database\n")
 		retStr.WriteString("`!open`: Gets a list of bets you have open\n")
+		retStr.WriteString("`!delete`: Deletes open bets\n")
 		retStr.WriteString("`!ping`: Pong!")
 	}
 	return retStr.String()
@@ -177,6 +184,7 @@ func openBets(user string) string {
 
 	i := 1
 	betMap = make(map[int]*firestore.DocumentSnapshot)
+	deleted = make([]int, 0)
 	var retStr strings.Builder
 
 	for {
@@ -209,4 +217,39 @@ func openBets(user string) string {
 	}
 
 	return retStr.String()
+}
+
+func deleteBets(data, user string) string {
+	if len(betMap) == 0 {
+		return "No open bets found to delete (you may need to !open first)"
+	}
+
+	betID, err := strconv.Atoi(data)
+	if err != nil {
+		return "Usage: !delete <ID as provided by !open>"
+	}
+
+	var betData bet
+	if err = betMap[betID].DataTo(&betData); err != nil {
+		return "Couldn't parse a bet from the database"
+	}
+
+	if user != betData.User {
+		return "This isn't your bet to delete!"
+	}
+
+	for _, x := range deleted {
+		if x == betID {
+			return "Already deleted that bet"
+		}
+	}
+
+	_, err = betMap[betID].Ref.Delete(context.Background())
+	if err != nil {
+		log.Printf(err.Error())
+		return "Couldn't delete that bet from the database"
+	}
+
+	deleted = append(deleted, betID)
+	return "Bet successfully deleted"
 }
