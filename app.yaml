@@ -1,0 +1,6 @@
+runtime: go
+api-version: go1
+
+instance-class: B1
+manual_scaling:
+  instances: 1
