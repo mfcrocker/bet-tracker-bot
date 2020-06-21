@@ -1,4 +1,4 @@
-# Bet Tracker Bot
+# Bet Tracker Bot [![Go Report](https://goreportcard.com/badge/github.com/mfcrocker/bet-tracker-bot)](https://goreportcard.com/report/github.com/mfcrocker/bet-tracker-bot)
 A discord bot for tracking bets!
 
 ## Usage
